@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Save, AlertCircle, FileText } from 'lucide-react';
-import { supabase } from '../../../lib/supabase'; // Tu cliente configurado
+// UBICACIÓN: src/modules/patients/components/FichaMedica.tsx
+import { useState, useEffect } from 'react';
+import { Save, FileText } from 'lucide-react';
+import { supabase } from '../../../lib/supabase'; 
 
 interface TechnicalSheetProps {
   patientId: string;
@@ -18,10 +19,10 @@ export const FichaMedica = ({ patientId, onClose }: TechnicalSheetProps) => {
     medication: ''
   });
 
-  // 1. Cargar datos al abrir el componente
   useEffect(() => {
     const fetchSheet = async () => {
-      const { data, error } = await supabase
+      // CORRECCIÓN: Quitamos la variable 'error' porque no la usábamos
+      const { data } = await supabase
         .from('technical_sheets')
         .select('*')
         .eq('patient_id', patientId)
@@ -33,20 +34,19 @@ export const FichaMedica = ({ patientId, onClose }: TechnicalSheetProps) => {
     fetchSheet();
   }, [patientId]);
 
-  // 2. Guardar datos en Supabase
   const handleSave = async () => {
     const { error } = await supabase
       .from('technical_sheets')
-      .upsert({ ...formData, patient_id: patientId }); // upsert crea o actualiza
+      .upsert({ ...formData, patient_id: patientId });
 
-    if (error) alert('Error al guardar');
+    if (error) alert('Error al guardar: ' + error.message);
     else {
         alert('Ficha actualizada');
         onClose();
     }
   };
 
-  if (loading) return <div className="text-white">Cargando ficha...</div>;
+  if (loading) return <div className="text-zinc-500 p-4">Cargando ficha...</div>;
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 animate-in slide-in-from-bottom-4">
@@ -70,14 +70,22 @@ export const FichaMedica = ({ patientId, onClose }: TechnicalSheetProps) => {
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-zinc-200 focus:border-emerald-500/50 focus:outline-none transition-colors"
             />
           </div>
-          {/* Repite este bloque para Ocupación y Estado Civil */}
           <div>
             <label className="block text-xs text-zinc-500 mb-1 uppercase tracking-wider">Ocupación</label>
             <input 
               type="text" 
               value={formData.occupation}
               onChange={e => setFormData({...formData, occupation: e.target.value})}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-zinc-200"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-zinc-200 focus:border-emerald-500/50 focus:outline-none transition-colors"
+            />
+          </div>
+           <div>
+            <label className="block text-xs text-zinc-500 mb-1 uppercase tracking-wider">Estado Civil</label>
+            <input 
+              type="text" 
+              value={formData.marital_status}
+              onChange={e => setFormData({...formData, marital_status: e.target.value})}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-zinc-200 focus:border-emerald-500/50 focus:outline-none transition-colors"
             />
           </div>
         </div>
@@ -92,7 +100,15 @@ export const FichaMedica = ({ patientId, onClose }: TechnicalSheetProps) => {
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-zinc-200 focus:border-emerald-500/50 focus:outline-none transition-colors resize-none"
             />
           </div>
-          {/* Agrega aquí Historia Médica y Medicación */}
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1 uppercase tracking-wider">Historia Médica</label>
+            <textarea 
+              rows={3}
+              value={formData.medical_history}
+              onChange={e => setFormData({...formData, medical_history: e.target.value})}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-zinc-200 focus:border-emerald-500/50 focus:outline-none transition-colors resize-none"
+            />
+          </div>
         </div>
       </div>
     </div>
