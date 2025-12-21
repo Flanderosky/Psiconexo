@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, Calendar, Clock, Activity, 
   ChevronRight, Brain, UserPlus, 
-  Eraser, X, Mail, Phone, User
+  Eraser, X, Mail, User
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
