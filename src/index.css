@@ -2,7 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Estilos globales para el modo oscuro por defecto */
-body {
-  @apply bg-black text-zinc-100;
+/* Estilos globales */
+@layer base {
+  body {
+    @apply bg-black text-zinc-100 antialiased; /* antialiased es la clave aquí */
+    font-feature-settings: "cv02", "cv03", "cv04"; /* Habilita caracteres alternativos modernos */
+  }
 }

@@ -8,71 +8,93 @@ import {
   LogOut, 
   Brain 
 } from 'lucide-react';
-import { PatientsView } from './modules/patients/PatientsView';
 
+// Importación de Módulos
+import { DashboardView } from './modules/dashboard/DashboardView'; // <--- NUEVO IMPORT
+import { PatientsView } from './modules/patients/PatientsView';
+import { CalendarView } from './modules/calendar/CalendarView';
+
+// Tipos para la navegación
 type View = 'dashboard' | 'patients' | 'calendar' | 'settings';
 
 function App() {
-  const [currentView, setCurrentView] = useState<View>('patients');
+  // Estado de navegación principal
+  const [currentView, setCurrentView] = useState<View>('dashboard');
 
+  // Vista temporal para módulos en construcción (Solo Settings por ahora)
   const PlaceholderView = ({ title }: { title: string }) => (
-    <div className="flex-1 h-full flex flex-col items-center justify-center bg-zinc-950 text-zinc-500">
-      <Brain size={48} className="mb-4 opacity-20 animate-pulse" />
+    <div className="flex-1 h-full flex flex-col items-center justify-center bg-zinc-950 text-zinc-500 animate-in fade-in">
+      <Brain size={48} className="mb-4 opacity-20 animate-pulse" strokeWidth={1.5} />
       <h2 className="text-xl font-semibold text-zinc-400">Módulo de {title}</h2>
-      <p className="text-sm mt-2">Próximamente...</p>
+      <p className="text-sm mt-2">Próximamente en la siguiente versión...</p>
     </div>
   );
 
   return (
-    // CAMBIO CLAVE 1: 'h-screen w-screen overflow-hidden' 
-    // Esto congela la ventana y evita que el navegador haga scroll general
+    // Contenedor Maestro: h-screen y w-screen para ocupar toda la ventana sin scroll global
     <div className="flex h-screen w-screen bg-black text-zinc-100 font-sans selection:bg-emerald-500/30 overflow-hidden">
       
-      {/* --- SIDEBAR --- */}
-      <nav className="w-20 flex-shrink-0 flex flex-col items-center py-6 border-r border-zinc-800 bg-zinc-950 z-20">
-        <div className="mb-8 p-3 bg-emerald-500/10 rounded-xl">
-          <Brain className="text-emerald-500" size={24} />
+      {/* --- SIDEBAR DE NAVEGACIÓN (Diseño Minimalista v2) --- */}
+      <nav className="w-24 flex-shrink-0 flex flex-col items-center py-8 bg-black border-r border-zinc-900/50 z-20">
+        
+        {/* LOGO CORPORATIVO */}
+        <div className="mb-10 flex flex-col items-center gap-2 group cursor-default">
+          <div className="p-2.5 bg-zinc-900 rounded-xl group-hover:bg-zinc-800 transition-colors border border-zinc-800 group-hover:border-emerald-500/30 shadow-lg shadow-black/50">
+            <Brain className="text-emerald-500" size={24} />
+          </div>
+          <span className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase group-hover:text-zinc-300 transition-colors">
+            Nexo
+          </span>
         </div>
 
-        <div className="flex-1 flex flex-col gap-4 w-full px-3">
+        {/* MENÚ DE NAVEGACIÓN */}
+        <div className="flex-1 flex flex-col gap-6 w-full px-4">
           <NavButton 
             active={currentView === 'dashboard'} 
             onClick={() => setCurrentView('dashboard')}
-            icon={<LayoutGrid size={22} />}
+            icon={<LayoutGrid size={22} strokeWidth={1.5} />}
             label="Inicio"
           />
           <NavButton 
             active={currentView === 'patients'} 
             onClick={() => setCurrentView('patients')}
-            icon={<Users size={22} />}
+            icon={<Users size={22} strokeWidth={1.5} />}
             label="Pacientes"
           />
           <NavButton 
             active={currentView === 'calendar'} 
             onClick={() => setCurrentView('calendar')}
-            icon={<Calendar size={22} />}
+            icon={<Calendar size={22} strokeWidth={1.5} />}
             label="Agenda"
           />
           <NavButton 
             active={currentView === 'settings'} 
             onClick={() => setCurrentView('settings')}
-            icon={<Settings size={22} />}
+            icon={<Settings size={22} strokeWidth={1.5} />}
             label="Ajustes"
           />
         </div>
 
-        <button className="mt-auto p-3 text-zinc-500 hover:text-red-400 transition-colors rounded-xl hover:bg-red-400/10">
-          <LogOut size={22} />
+        {/* BOTÓN SALIDA */}
+        <button className="mt-auto p-3 text-zinc-600 hover:text-zinc-300 transition-colors opacity-70 hover:opacity-100">
+          <LogOut size={22} strokeWidth={1.5} />
         </button>
       </nav>
 
-      {/* --- MAIN CONTENT AREA --- */}
-      {/* CAMBIO CLAVE 2: 'relative' para que los hijos absolutos se posicionen bien dentro de él */}
+      {/* --- ÁREA DE CONTENIDO PRINCIPAL --- */}
       <main className="flex-1 h-full relative bg-black overflow-hidden flex flex-col">
-        {currentView === 'dashboard' && <PlaceholderView title="Dashboard" />}
-        {/* Aquí renderizamos PatientsView que ya está configurado con h-full */}
+        {/* Renderizado Condicional */}
+        
+        {/* 1. DASHBOARD REAL */}
+        {currentView === 'dashboard' && <DashboardView />}
+        
+        {/* 2. PACIENTES */}
         {currentView === 'patients' && <PatientsView />}
-        {currentView === 'calendar' && <PlaceholderView title="Agenda y Sesiones" />}
+        
+        {/* 3. AGENDA */}
+        {currentView === 'calendar' && <CalendarView />}
+        
+        {/* 4. AJUSTES (Placeholder) */}
         {currentView === 'settings' && <PlaceholderView title="Configuración" />}
       </main>
 
@@ -80,7 +102,7 @@ function App() {
   );
 }
 
-// Sub-componente NavButton (sin cambios mayores, solo optimización visual)
+// Sub-componente para botones del menú
 interface NavButtonProps {
   active: boolean;
   onClick: () => void;
@@ -92,17 +114,22 @@ const NavButton = ({ active, onClick, icon, label }: NavButtonProps) => (
   <button
     onClick={onClick}
     className={`
-      relative group flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-200
+      relative group flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-300
       ${active 
-        ? 'bg-zinc-800 text-emerald-400 shadow-lg shadow-black/50' 
-        : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
+        ? 'text-emerald-400 bg-zinc-900/50' 
+        : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900/30'
       }
     `}
     title={label}
   >
-    {icon}
+    {/* El icono recibe las clases del padre automáticamente */}
+    <div className={`transition-transform duration-300 ${active ? 'scale-105' : 'group-hover:scale-105'}`}>
+      {icon}
+    </div>
+    
+    {/* Indicador visual de activo (Punto sutil) */}
     {active && (
-      <span className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-1 h-8 bg-emerald-500 rounded-r-full" />
+      <span className="absolute -right-1 top-1/2 -translate-y-1/2 w-1 h-1 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
     )}
   </button>
 );
