@@ -6,7 +6,8 @@ import {
   Settings, 
   LogOut, 
   Shield, 
-  Brain 
+  Brain,
+  Calendar // <--- 1. NUEVO IMPORT
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -77,6 +78,10 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout }: SidebarProps) => {
         {/* MENÚ */}
         <nav className="space-y-1 px-3">
           <MenuButton id="dashboard" icon={LayoutDashboard} label="Dashboard" />
+          
+          {/* 2. NUEVO BOTÓN: AGENDA */}
+          <MenuButton id="calendar" icon={Calendar} label="Agenda" />
+
           <MenuButton id="patients" icon={Users} label="Pacientes" />
           <MenuButton id="admin" icon={Shield} label="Admin" />
         </nav>

@@ -9,9 +9,18 @@ import { LiveSessionView } from './components/LiveSessionView';
 interface PatientsViewProps {
   initialCreateMode?: boolean;
   onResetCreateMode?: () => void;
+  // --- NUEVAS PROPS PARA NAVEGACIÓN ---
+  initialPatientId?: string | null;
+  onResetPatientId?: () => void;
 }
 
-export const PatientsView = ({ initialCreateMode = false, onResetCreateMode }: PatientsViewProps) => {
+export const PatientsView = ({ 
+  initialCreateMode = false, 
+  onResetCreateMode,
+  // Desestructuramos las nuevas props
+  initialPatientId,
+  onResetPatientId
+}: PatientsViewProps) => {
   // Estados de Navegación
   const [view, setView] = useState<'list' | 'profile' | 'live_session' | 'session' | 'new_patient'>('list');
   
@@ -33,7 +42,7 @@ export const PatientsView = ({ initialCreateMode = false, onResetCreateMode }: P
     full_name: '', email: '', phone: '', birth_date: '', occupation: '', reason: '', notes: ''
   });
 
-  // EFECTO: Manejo de apertura desde Dashboard
+  // EFECTO: Manejo de apertura de "Nuevo Paciente" desde Dashboard
   useEffect(() => {
     if (initialCreateMode) {
       setView('new_patient');
@@ -45,6 +54,23 @@ export const PatientsView = ({ initialCreateMode = false, onResetCreateMode }: P
   useEffect(() => {
     fetchPatients();
   }, []);
+
+  // --- NUEVO EFECTO: Manejo de navegación desde Calendario ---
+  useEffect(() => {
+    // Si nos piden abrir un paciente y ya tenemos la lista cargada
+    if (initialPatientId && patients.length > 0) {
+      const targetPatient = patients.find(p => p.id === initialPatientId);
+      if (targetPatient) {
+        setSelectedPatientData(targetPatient);
+        setSelectedPatientId(targetPatient.id);
+        setView('profile');
+        
+        // Limpiamos el ID en el padre para evitar bucles
+        if (onResetPatientId) onResetPatientId();
+      }
+    }
+  }, [initialPatientId, patients, onResetPatientId]);
+  // -----------------------------------------------------------
 
   const fetchPatients = async () => {
     setLoading(true);
