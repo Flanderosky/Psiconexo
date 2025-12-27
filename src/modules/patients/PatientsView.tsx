@@ -1,281 +1,399 @@
 // UBICACIÓN: src/modules/patients/PatientsView.tsx
-import React, { useState, useEffect } from 'react';
-import { Plus, User, ChevronRight, Save, X, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { 
+  Plus, Search, User, Phone, Mail, 
+  X, Save, Trash2, FileText, 
+  AlertCircle, Siren, XCircle
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { SessionDetail } from './components/SessionDetail';
-import { PatientProfile } from './components/PatientProfile';
-import { LiveSessionView } from './components/LiveSessionView';
+
+// --- INTERFAZ ---
+export interface Patient {
+  id?: string;
+  first_name: string;
+  last_name: string;
+  email?: string;
+  phone?: string;
+  birth_date?: string;
+  address?: string;
+  notes?: string;
+  // Campos de emergencia
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_relation?: string;
+  
+  created_at?: string;
+  user_id?: string;
+}
 
 interface PatientsViewProps {
   initialCreateMode?: boolean;
   onResetCreateMode?: () => void;
-  // --- NUEVAS PROPS PARA NAVEGACIÓN ---
   initialPatientId?: string | null;
   onResetPatientId?: () => void;
 }
 
 export const PatientsView = ({ 
-  initialCreateMode = false, 
+  initialCreateMode, 
   onResetCreateMode,
-  // Desestructuramos las nuevas props
   initialPatientId,
   onResetPatientId
 }: PatientsViewProps) => {
-  // Estados de Navegación
-  const [view, setView] = useState<'list' | 'profile' | 'live_session' | 'session' | 'new_patient'>('list');
   
-  // Datos
-  const [patients, setPatients] = useState<any[]>([]);
-  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
-  const [selectedPatientData, setSelectedPatientData] = useState<any>(null);
+  // --- ESTADOS ---
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
   
-  // Control de Sesiones
-  const [targetSessionId, setTargetSessionId] = useState<string>('new');
-  // Contexto para la preparación
-  const [lastSessionContext, setLastSessionContext] = useState<string>('');
-  
-  // UI States
-  const [loading, setLoading] = useState(false);
-  
-  // Formulario Nuevo Paciente
-  const [newPatientData, setNewPatientData] = useState({
-    full_name: '', email: '', phone: '', birth_date: '', occupation: '', reason: '', notes: ''
-  });
+  // Drawer (Formulario)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // EFECTO: Manejo de apertura de "Nuevo Paciente" desde Dashboard
-  useEffect(() => {
-    if (initialCreateMode) {
-      setView('new_patient');
-      if (onResetCreateMode) onResetCreateMode();
-    }
-  }, [initialCreateMode, onResetCreateMode]);
+  // MODAL DE EMERGENCIA
+  const [emergencyModalOpen, setEmergencyModalOpen] = useState(false);
+  const [emergencyData, setEmergencyData] = useState<Patient | null>(null);
 
-  // EFECTO: Carga inicial
+  // --- CARGA DE DATOS ---
   useEffect(() => {
     fetchPatients();
   }, []);
 
-  // --- NUEVO EFECTO: Manejo de navegación desde Calendario ---
   useEffect(() => {
-    // Si nos piden abrir un paciente y ya tenemos la lista cargada
-    if (initialPatientId && patients.length > 0) {
-      const targetPatient = patients.find(p => p.id === initialPatientId);
-      if (targetPatient) {
-        setSelectedPatientData(targetPatient);
-        setSelectedPatientId(targetPatient.id);
-        setView('profile');
-        
-        // Limpiamos el ID en el padre para evitar bucles
-        if (onResetPatientId) onResetPatientId();
-      }
+    if (initialCreateMode) {
+      handleCreateNew();
+      if (onResetCreateMode) onResetCreateMode();
     }
-  }, [initialPatientId, patients, onResetPatientId]);
-  // -----------------------------------------------------------
+    if (initialPatientId && patients.length > 0) {
+        const patientFound = patients.find(p => p.id === initialPatientId);
+        if (patientFound) handleEdit(patientFound);
+        if (onResetPatientId) onResetPatientId();
+    }
+  }, [initialCreateMode, initialPatientId, patients]);
 
   const fetchPatients = async () => {
     setLoading(true);
-    const { data } = await supabase.from('patients').select('*').order('created_at', { ascending: false });
-    if (data) setPatients(data);
-    setLoading(false);
-  };
-
-  // HANDLER: Preparar Sesión (Buscar contexto anterior)
-  const handlePrepareLiveSession = async () => {
-    if (!selectedPatientId) return;
-    setLoading(true);
-    
-    // Buscamos la última sesión completada para mostrarla en la preparación
-    const { data } = await supabase
-        .from('sessions')
-        .select('notes')
-        .eq('patient_id', selectedPatientId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-    if (data) {
-        setLastSessionContext(data.notes || "Sin notas registradas en la sesión anterior.");
-    } else {
-        setLastSessionContext("Esta es la primera sesión registrada para este paciente.");
-    }
-    
-    setLoading(false);
-    setView('live_session');
-  };
-
-  // HANDLER: Finalizar y Guardar Sesión en Vivo
-  const handleFinishLiveSession = async (notes: string, duration: number, tags: string[], timeline: any[]) => {
-    if (!selectedPatientId) return;
-    setLoading(true); 
-
     try {
-        const { data, error } = await supabase.from('sessions').insert({
-            patient_id: selectedPatientId,
-            notes: notes,       // Texto (Header + Notas rápidas)
-            duration: duration, // Segundos totales
-            tags: tags,         // Etiquetas de resumen (ej. "Ansiedad", "Resistencia (3)")
-            timeline: timeline, // Array JSON con la cronología exacta
-            status: 'completed',
-            created_at: new Date().toISOString()
-        }).select().single();
+      const { data, error } = await supabase
+        .from('patients')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-        if (error) throw error;
-
-        // Redirigir al editor detallado (Documento)
-        if (data) {
-            setTargetSessionId(data.id);
-            setView('session'); 
-        }
-
-    } catch (error) {
-        console.error('Error guardando sesión:', error);
-        alert('Hubo un error al guardar la sesión.');
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  // HANDLER: Crear Paciente
-  const handleCreatePatient = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const { error } = await supabase.from('patients').insert([{
-        full_name: newPatientData.full_name,
-        email: newPatientData.email,
-        phone: newPatientData.phone,
-        birth_date: newPatientData.birth_date,
-        occupation: newPatientData.occupation,
-        clinical_summary: `Motivo: ${newPatientData.reason}\n\nNotas Iniciales: ${newPatientData.notes}`
-      }]);
-      
       if (error) throw error;
-      await fetchPatients();
-      setView('list');
-      setNewPatientData({ full_name: '', email: '', phone: '', birth_date: '', occupation: '', reason: '', notes: '' });
-    } catch (err) {
-      console.error(err);
-      alert('Error al crear paciente.');
+      setPatients(data || []);
+    } catch (error) {
+      console.error('Error cargando pacientes:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- RENDERIZADO ---
+  // --- HANDLERS ---
+  const handleCreateNew = () => {
+    setSelectedPatient({
+      first_name: '',
+      last_name: '',
+      email: '',
+      phone: '',
+      address: '',
+      notes: '',
+      emergency_contact_name: '',
+      emergency_contact_phone: '',
+      emergency_contact_relation: ''
+    });
+    setIsDrawerOpen(true);
+  };
 
-  if (loading && view === 'live_session') {
-      return <div className="h-full flex items-center justify-center bg-black text-emerald-500"><Loader2 className="animate-spin" size={48}/></div>;
-  }
+  const handleEdit = (patient: Patient) => {
+    setSelectedPatient(patient);
+    setIsDrawerOpen(true);
+  };
 
-  // 1. RELOJ EN VIVO
-  if (view === 'live_session' && selectedPatientData) {
-      return (
-          <LiveSessionView 
-            patientName={selectedPatientData.full_name}
-            lastSessionContext={lastSessionContext}
-            onFinish={handleFinishLiveSession}
-            onCancel={() => setView('profile')}
-          />
-      );
-  }
+  const handleEmergencyClick = (e: React.MouseEvent, patient: Patient) => {
+    e.stopPropagation(); 
+    setEmergencyData(patient);
+    setEmergencyModalOpen(true);
+  };
 
-  // 2. DETALLE DE SESIÓN (Documento)
-  if (view === 'session' && selectedPatientId) {
-    return (
-      <SessionDetail 
-        sessionId={targetSessionId} 
-        patientId={selectedPatientId} 
-        onBack={() => {
-            setView('profile');
-            setTargetSessionId('new');
-        }} 
-      />
-    );
-  }
+  const closeDrawer = () => {
+    setIsDrawerOpen(false);
+    setTimeout(() => setSelectedPatient(null), 300);
+  };
 
-  // 3. PERFIL DE PACIENTE
-  if (view === 'profile' && selectedPatientData) {
-    return (
-      <PatientProfile 
-        patient={selectedPatientData}
-        onBack={() => setView('list')}
-        onStartSession={handlePrepareLiveSession} // Usa la función de preparación
-        onOpenSession={(sessionId) => {
-            setTargetSessionId(sessionId);
-            setView('session');
-        }}
-      />
-    );
-  }
+  const handleDelete = async (id: string) => {
+    if (!confirm('¿Estás seguro de eliminar este paciente? Se borrará todo su historial.')) return;
+    try {
+      const { error } = await supabase.from('patients').delete().eq('id', id);
+      if (error) throw error;
+      setPatients(patients.filter(p => p.id !== id));
+    } catch (error) {
+      console.error('Error eliminando:', error);
+      alert('Error al eliminar paciente.');
+    }
+  };
 
-  // 4. NUEVO PACIENTE
-  if (view === 'new_patient') {
-     return (
-      <div className="flex-1 h-full overflow-y-auto bg-black p-6 md:p-10 animate-in slide-in-from-bottom-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="flex items-center gap-4 mb-8">
-            <button onClick={() => setView('list')} className="p-2 hover:bg-zinc-900 rounded-full text-zinc-400 transition-colors">
-              <X size={24} />
-            </button>
-            <div>
-              <h2 className="text-2xl text-white font-light tracking-wide">Nueva Ficha Clínica</h2>
-              <p className="text-zinc-500 text-sm">Registro de ingreso para paciente</p>
-            </div>
-          </div>
-          <form onSubmit={handleCreatePatient} className="space-y-8">
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold text-emerald-500 uppercase tracking-widest border-b border-zinc-900 pb-2">Información General</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div className="space-y-1"><label className="text-[10px] text-zinc-500 uppercase font-bold">Nombre Completo</label><input required type="text" value={newPatientData.full_name} onChange={e => setNewPatientData({...newPatientData, full_name: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-emerald-500 focus:outline-none" placeholder="Ej. Ana García" /></div>
-                 <div className="space-y-1"><label className="text-[10px] text-zinc-500 uppercase font-bold">Ocupación</label><input type="text" value={newPatientData.occupation} onChange={e => setNewPatientData({...newPatientData, occupation: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-emerald-500 focus:outline-none" placeholder="Ej. Arquitecta" /></div>
-                 <div className="space-y-1"><label className="text-[10px] text-zinc-500 uppercase font-bold">Teléfono</label><input type="tel" value={newPatientData.phone} onChange={e => setNewPatientData({...newPatientData, phone: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-emerald-500 focus:outline-none" /></div>
-                 <div className="space-y-1"><label className="text-[10px] text-zinc-500 uppercase font-bold">Correo Electrónico</label><input type="email" value={newPatientData.email} onChange={e => setNewPatientData({...newPatientData, email: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-emerald-500 focus:outline-none" /></div>
-                 <div className="space-y-1"><label className="text-[10px] text-zinc-500 uppercase font-bold">Fecha de Nacimiento</label><input type="date" value={newPatientData.birth_date} onChange={e => setNewPatientData({...newPatientData, birth_date: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-emerald-500 focus:outline-none" /></div>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold text-emerald-500 uppercase tracking-widest border-b border-zinc-900 pb-2">Motivo de Consulta</h3>
-              <div className="space-y-1"><textarea required rows={3} value={newPatientData.reason} onChange={e => setNewPatientData({...newPatientData, reason: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-emerald-500 focus:outline-none resize-none" /></div>
-            </div>
-             <div className="space-y-4">
-              <h3 className="text-xs font-bold text-emerald-500 uppercase tracking-widest border-b border-zinc-900 pb-2">Observaciones Iniciales</h3>
-              <div className="space-y-1"><textarea rows={3} value={newPatientData.notes} onChange={e => setNewPatientData({...newPatientData, notes: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-emerald-500 focus:outline-none resize-none" /></div>
-            </div>
-            <div className="pt-4 flex gap-4">
-              <button type="button" onClick={() => setView('list')} className="flex-1 py-3 bg-zinc-900 text-zinc-400 rounded-xl font-medium hover:text-white transition-colors">Cancelar</button>
-              <button type="submit" disabled={loading} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-2"><Save size={18} /> Crear Expediente</button>
-            </div>
-          </form>
-        </div>
-      </div>
-     );
-  }
+  const handleSave = async () => {
+    // 1. Validaciones
+    if (!selectedPatient?.first_name || !selectedPatient?.last_name) {
+      alert('⚠️ Nombre y Apellido son obligatorios.');
+      return;
+    }
 
-  // 5. VISTA LISTA (DEFAULT)
+    if (!selectedPatient?.emergency_contact_name || !selectedPatient?.emergency_contact_phone) {
+      alert('🚨 SEGURIDAD: Debes agregar un contacto de emergencia obligatoriamente.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const patientData = { ...selectedPatient };
+      const { data, error } = await supabase
+        .from('patients')
+        .upsert(patientData)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (selectedPatient.id) {
+        setPatients(patients.map(p => p.id === data.id ? data : p));
+      } else {
+        setPatients([data, ...patients]);
+      }
+      closeDrawer();
+    } catch (error: any) {
+      console.error('Error guardando:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const filteredPatients = patients.filter(p => 
+    `${p.first_name || ''} ${p.last_name || ''}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.email || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
-    <div className="flex-1 h-full overflow-y-auto bg-black p-6 md:p-10 animate-in fade-in">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl text-white font-light tracking-wide">Pacientes</h1>
-        <button onClick={() => setView('new_patient')} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors border border-zinc-800">
-          <Plus size={18} /> <span className="text-sm font-medium">Nuevo</span>
+    <div className="h-full flex flex-col bg-black text-white relative overflow-hidden">
+      
+      {/* HEADER */}
+      <div className="p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 z-10">
+        <div>
+          <h1 className="text-3xl font-light tracking-tight text-white">Pacientes</h1>
+          <p className="text-zinc-500 text-sm mt-1">Gestión de expedientes clínicos.</p>
+        </div>
+        <button 
+          onClick={handleCreateNew}
+          className="group flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black px-5 py-3 rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+        >
+          <Plus size={20} className="group-hover:rotate-90 transition-transform"/> 
+          <span>Nuevo Paciente</span>
         </button>
       </div>
 
-      {loading ? (
-        <div className="text-zinc-500 text-center py-10">Cargando expediente...</div>
-      ) : (
-        <div className="grid grid-cols-1 gap-3">
-          {patients.map(patient => (
-            <div key={patient.id} onClick={() => { setSelectedPatientId(patient.id); setSelectedPatientData(patient); setView('profile'); }} className="group bg-zinc-900/30 border border-zinc-800 p-4 rounded-xl flex items-center justify-between hover:border-emerald-500/30 hover:bg-zinc-900/60 transition-all cursor-pointer">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center text-zinc-400 group-hover:text-emerald-400 transition-colors"><User size={18} /></div>
-                <div><h3 className="text-white font-medium">{patient.full_name}</h3><p className="text-xs text-zinc-500">{patient.occupation || 'Sin ocupación'}</p></div>
+      {/* SEARCH */}
+      <div className="px-6 md:px-8 mb-6 z-10">
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+          <input 
+            type="text" 
+            placeholder="Buscar..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+          />
+        </div>
+      </div>
+
+      {/* GRID */}
+      <div className="flex-1 overflow-y-auto px-6 md:px-8 pb-8 z-10">
+        {loading ? (
+          <div className="flex items-center justify-center h-40 text-emerald-500 animate-pulse">Cargando...</div>
+        ) : filteredPatients.length === 0 ? (
+          <div className="text-center py-20 text-zinc-600">
+            <User size={48} className="mx-auto mb-4 opacity-20" />
+            <p>No hay pacientes registrados.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredPatients.map(patient => (
+              <div key={patient.id} onClick={() => handleEdit(patient)} className="group bg-zinc-900/30 border border-zinc-800/60 hover:border-emerald-500/30 hover:bg-zinc-900/60 rounded-2xl p-5 cursor-pointer transition-all duration-300 relative overflow-hidden flex flex-col justify-between min-h-[180px]">
+                
+                {/* Parte Superior Tarjeta */}
+                <div>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-zinc-800 to-black border border-zinc-700 flex items-center justify-center text-lg font-bold text-zinc-400 group-hover:text-emerald-400 group-hover:border-emerald-500/50 transition-colors">
+                      {/* --- CORRECCIÓN AQUÍ: Evitamos leer [0] si el string está vacío --- */}
+                      {(patient.first_name && patient.first_name.length > 0) ? patient.first_name[0] : ''}
+                      {(patient.last_name && patient.last_name.length > 0) ? patient.last_name[0] : ''}
+                      {/* Fallback si no hay nombre */}
+                      {(!patient.first_name && !patient.last_name) && <User size={20} />}
+                    </div>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleDelete(patient.id!); }}
+                      className="p-2 text-zinc-600 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  
+                  <h3 className="text-lg font-medium text-white mb-1 group-hover:text-emerald-400 transition-colors">
+                    {patient.first_name || 'Sin Nombre'} {patient.last_name || ''}
+                  </h3>
+                  
+                  <div className="space-y-1 mt-2">
+                    {patient.email && <div className="flex items-center gap-2 text-xs text-zinc-500"><Mail size={12} /> <span className="truncate">{patient.email}</span></div>}
+                    {patient.phone && <div className="flex items-center gap-2 text-xs text-zinc-500"><Phone size={12} /> <span>{patient.phone}</span></div>}
+                  </div>
+                </div>
+
+                {/* BOTÓN DE EMERGENCIA */}
+                <div className="mt-4 pt-4 border-t border-zinc-800/50">
+                   <button 
+                     onClick={(e) => handleEmergencyClick(e, patient)}
+                     className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500 hover:text-white transition-all text-xs font-bold uppercase tracking-wider group/alert"
+                   >
+                      <Siren size={14} className="group-hover/alert:animate-pulse" />
+                      Emergencia
+                   </button>
+                </div>
+
               </div>
-              <div className="flex items-center gap-4"><ChevronRight className="text-zinc-600 group-hover:text-emerald-500 transition-colors" /></div>
-            </div>
-          ))}
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* --- MODAL DE ALERTA DE EMERGENCIA --- */}
+      {emergencyModalOpen && emergencyData && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+           <div className="absolute inset-0 bg-red-950/80 backdrop-blur-sm" onClick={() => setEmergencyModalOpen(false)}></div>
+           
+           <div className="relative bg-black border-2 border-red-600 w-full max-w-md rounded-3xl p-8 shadow-[0_0_100px_rgba(220,38,38,0.5)] animate-in zoom-in-95 duration-200">
+              <button onClick={() => setEmergencyModalOpen(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><XCircle size={32}/></button>
+
+              <div className="flex flex-col items-center text-center space-y-6">
+                 <div className="w-24 h-24 rounded-full bg-red-500 flex items-center justify-center animate-bounce">
+                    <Siren size={48} className="text-white" />
+                 </div>
+
+                 <div>
+                    <h2 className="text-xs font-bold text-red-500 tracking-[0.3em] uppercase mb-2">Contacto de Emergencia</h2>
+                    <h3 className="text-3xl font-bold text-white mb-1">{emergencyData.emergency_contact_name}</h3>
+                    <span className="px-3 py-1 rounded-full bg-zinc-800 text-zinc-300 text-sm font-medium border border-zinc-700">
+                       {emergencyData.emergency_contact_relation}
+                    </span>
+                 </div>
+
+                 <div className="w-full bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
+                    <p className="text-zinc-500 text-xs uppercase font-bold mb-2">Teléfono de Contacto</p>
+                    <a href={`tel:${emergencyData.emergency_contact_phone}`} className="text-2xl md:text-3xl font-mono font-bold text-emerald-400 hover:text-emerald-300 flex items-center justify-center gap-3">
+                       <Phone size={24} />
+                       {emergencyData.emergency_contact_phone}
+                    </a>
+                 </div>
+
+                 <button onClick={() => setEmergencyModalOpen(false)} className="text-zinc-500 hover:text-white text-sm underline">
+                    Cerrar Alerta
+                 </button>
+              </div>
+           </div>
         </div>
       )}
+
+      {/* --- DRAWER (FORMULARIO) --- */}
+      <>
+        <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${isDrawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={closeDrawer}/>
+        <div className={`fixed top-0 right-0 h-full w-full md:w-[500px] bg-zinc-950 border-l border-zinc-800 z-50 shadow-2xl transform transition-transform duration-300 flex flex-col ${isDrawerOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          
+          <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+            <h2 className="text-xl font-light text-white flex items-center gap-2">
+              {selectedPatient?.id ? <FileText className="text-emerald-500" size={20}/> : <Plus className="text-emerald-500" size={20}/>}
+              {selectedPatient?.id ? 'Editar Paciente' : 'Nuevo Paciente'}
+            </h2>
+            <button onClick={closeDrawer} className="text-zinc-500 hover:text-white transition-colors"><X size={24} /></button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="space-y-4">
+              <h3 className="text-xs uppercase tracking-wider font-bold text-zinc-500 mb-2 flex items-center gap-2"><User size={14}/> Información Personal</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-400 uppercase font-bold">Nombre *</label>
+                  <input className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" placeholder="Juan" value={selectedPatient?.first_name || ''} onChange={e => setSelectedPatient({...selectedPatient!, first_name: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-400 uppercase font-bold">Apellido *</label>
+                  <input className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" placeholder="Pérez" value={selectedPatient?.last_name || ''} onChange={e => setSelectedPatient({...selectedPatient!, last_name: e.target.value})} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-400 uppercase font-bold">Correo</label>
+                  <input type="email" className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" value={selectedPatient?.email || ''} onChange={e => setSelectedPatient({...selectedPatient!, email: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-400 uppercase font-bold">Teléfono</label>
+                  <input type="tel" className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" value={selectedPatient?.phone || ''} onChange={e => setSelectedPatient({...selectedPatient!, phone: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-400 uppercase font-bold">Nacimiento</label>
+                  <input type="date" className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors" value={selectedPatient?.birth_date || ''} onChange={e => setSelectedPatient({...selectedPatient!, birth_date: e.target.value})} />
+                </div>
+              </div>
+            </div>
+
+            {/* SECCIÓN OBLIGATORIA DE EMERGENCIA */}
+            <div className="pt-6 border-t border-zinc-900">
+               <div className="flex items-center gap-2 mb-4">
+                  <div className="p-1.5 rounded-lg bg-red-500 text-white animate-pulse">
+                    <AlertCircle size={16} />
+                  </div>
+                  <h3 className="text-xs uppercase tracking-wider font-bold text-red-500">Contacto de Emergencia (Obligatorio)</h3>
+               </div>
+               
+               <div className="p-4 bg-red-950/10 border border-red-900/30 rounded-2xl space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-red-400 uppercase font-bold">Nombre del Contacto *</label>
+                    <input className="w-full bg-black border border-red-900/30 rounded-xl px-4 py-2.5 text-white focus:border-red-500 outline-none transition-colors text-sm" placeholder="Ej: María López" value={selectedPatient?.emergency_contact_name || ''} onChange={e => setSelectedPatient({...selectedPatient!, emergency_contact_name: e.target.value})} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-1">
+                        <label className="text-[10px] text-red-400 uppercase font-bold">Parentesco *</label>
+                        <select className="w-full bg-black border border-red-900/30 rounded-xl px-4 py-2.5 text-white focus:border-red-500 outline-none transition-colors text-sm appearance-none" value={selectedPatient?.emergency_contact_relation || ''} onChange={e => setSelectedPatient({...selectedPatient!, emergency_contact_relation: e.target.value})}>
+                          <option value="">Seleccionar...</option>
+                          <option value="Padre/Madre">Padre / Madre</option>
+                          <option value="Pareja">Pareja</option>
+                          <option value="Hijo/a">Hijo/a</option>
+                          <option value="Hermano/a">Hermano/a</option>
+                          <option value="Amigo/a">Amigo/a</option>
+                          <option value="Otro">Otro</option>
+                        </select>
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[10px] text-red-400 uppercase font-bold">Teléfono Emergencia *</label>
+                        <input type="tel" className="w-full bg-black border border-red-900/30 rounded-xl px-4 py-2.5 text-white focus:border-red-500 outline-none transition-colors text-sm" placeholder="55..." value={selectedPatient?.emergency_contact_phone || ''} onChange={e => setSelectedPatient({...selectedPatient!, emergency_contact_phone: e.target.value})} />
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+            <div className="pt-4 border-t border-zinc-900">
+               <h3 className="text-xs uppercase tracking-wider font-bold text-zinc-500 mb-2">Notas</h3>
+               <textarea className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white focus:border-emerald-500 outline-none transition-colors min-h-[100px] resize-none" placeholder="..." value={selectedPatient?.notes || ''} onChange={e => setSelectedPatient({...selectedPatient!, notes: e.target.value})} />
+            </div>
+          </div>
+
+          <div className="p-6 border-t border-zinc-800 bg-zinc-900/50 flex justify-end gap-3">
+            <button onClick={closeDrawer} className="px-5 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">Cancelar</button>
+            <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 rounded-xl text-sm font-bold bg-emerald-500 hover:bg-emerald-400 text-black shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2 disabled:opacity-50">
+              {saving ? 'Guardando...' : <><Save size={18}/> Guardar Paciente</>}
+            </button>
+          </div>
+        </div>
+      </>
     </div>
   );
 };
