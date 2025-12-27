@@ -1,11 +1,10 @@
 // UBICACIÓN: src/modules/patients/components/SessionDetail.tsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   ArrowLeft, Save, 
   MoreHorizontal, FileText, Zap, ShieldAlert, 
   Activity, Repeat, AlertTriangle, CheckSquare, Moon,
-  ChevronDown, ChevronUp, Edit3
-} from 'lucide-react';
+  ChevronDown, ChevronUp} from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 
 interface SessionDetailProps {
@@ -14,7 +13,7 @@ interface SessionDetailProps {
   onBack: () => void;
 }
 
-export const SessionDetail = ({ sessionId, patientId, onBack }: SessionDetailProps) => {
+export const SessionDetail = ({ sessionId, onBack }: SessionDetailProps) => {
   const [loading, setLoading] = useState(false);
   const [session, setSession] = useState<any>(null);
   
@@ -33,7 +32,7 @@ export const SessionDetail = ({ sessionId, patientId, onBack }: SessionDetailPro
 
   const fetchSession = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('sessions')
       .select('*')
       .eq('id', sessionId)

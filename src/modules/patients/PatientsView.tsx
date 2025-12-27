@@ -1,6 +1,6 @@
 // UBICACIÓN: src/modules/patients/PatientsView.tsx
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, User, ChevronRight, Save, X, Loader2 } from 'lucide-react';
+import { Plus, User, ChevronRight, Save, X, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { SessionDetail } from './components/SessionDetail';
 import { PatientProfile } from './components/PatientProfile';

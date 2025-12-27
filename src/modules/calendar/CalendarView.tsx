@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, 
-  Clock, User, Activity, Loader2, Plus, X, Check, FileText, ArrowRight
+  Clock, User, Activity, Loader2, Plus, X, FileText, ArrowRight
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 

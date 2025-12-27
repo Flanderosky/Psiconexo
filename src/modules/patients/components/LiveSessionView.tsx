@@ -1,5 +1,5 @@
 // UBICACIÓN: src/modules/patients/components/LiveSessionView.tsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Zap, Moon, ShieldAlert, CheckSquare, 
   StopCircle, Brain, Pause, Play,

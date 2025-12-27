@@ -1,9 +1,9 @@
 // UBICACIÓN: src/modules/patients/components/PatientProfile.tsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   User, Phone, Mail, Calendar, 
   Brain, Activity, ArrowLeft, Play, 
-  FileText, Dna, ChevronRight, Hash,
+  FileText, Dna, Hash, // <--- Hash está aquí correctamente
   Trash2, Archive, CheckCircle2, Loader2, ExternalLink
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
@@ -12,7 +12,7 @@ interface PatientProfileProps {
   patient: any;
   onBack: () => void;
   onStartSession: () => void;
-  onOpenSession: (sessionId: string) => void; // <--- NUEVA PROP
+  onOpenSession: (sessionId: string) => void; 
 }
 
 export const PatientProfile = ({ patient, onBack, onStartSession, onOpenSession }: PatientProfileProps) => {
