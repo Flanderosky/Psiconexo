@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './lib/supabase';
 import { Session } from '@supabase/supabase-js';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react'; // <--- CORREGIDO: Se quitó 'Ban'
 
 import { Sidebar } from './components/Sidebar';
 import { AuthView } from './modules/auth/AuthView';
@@ -14,8 +14,7 @@ import { CalendarView } from './modules/calendar/CalendarView';
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   
-  // --- MEJORA: INICIALIZAR ROL DESDE LOCALSTORAGE ---
-  // Esto evita que el botón desaparezca mientras carga
+  // Rol desde localStorage para UI optimista
   const [userRole, setUserRole] = useState<string | null>(() => {
     return localStorage.getItem('psiconexo_role');
   });
@@ -39,11 +38,15 @@ function App() {
         if (initialSession?.user) {
           setSession(initialSession);
           sessionRef.current = initialSession;
+          
+          // --- VALIDACIÓN DE SEGURIDAD AL INICIAR ---
+          const isValid = await validateUserStatus(initialSession.user.id);
+          if (!isValid) return; // Si no es válido, validateUserStatus hará el logout
+          
           // Si no tenemos rol en memoria, lo buscamos
           if (!localStorage.getItem('psiconexo_role')) {
              await fetchUserRole(initialSession.user.id);
           } else {
-             // Si ya lo tenemos, validamos en segundo plano silenciosamente
              fetchUserRole(initialSession.user.id);
              setLoading(false);
           }
@@ -52,28 +55,28 @@ function App() {
         }
       }
 
-      // 2. Escuchar cambios de sesión
+      // 2. Escuchar cambios de sesión (Login/Logout)
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
         if (!mounted) return;
 
-        // Si es Logout, limpiamos todo
         if (event === 'SIGNED_OUT') {
           setLoading(true);
-          localStorage.removeItem('psiconexo_role'); // Borramos memoria
+          localStorage.removeItem('psiconexo_role');
           setSession(null);
           setUserRole(null);
           sessionRef.current = null;
           setActiveTab('dashboard');
           setLoading(false);
         } 
-        // Si es Login o cambio real de sesión
         else if (currentSession && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
            const isNewUser = currentSession.user.id !== sessionRef.current?.user.id;
            
            if (isNewUser || !userRole) {
              setSession(currentSession);
              sessionRef.current = currentSession;
-             await fetchUserRole(currentSession.user.id);
+             // Validar antes de dar acceso
+             const isValid = await validateUserStatus(currentSession.user.id);
+             if (isValid) await fetchUserRole(currentSession.user.id);
            }
         }
       });
@@ -86,23 +89,111 @@ function App() {
     return () => { mounted = false; };
   }, []);
 
+  // --- NUEVO: ESCUCHA EN TIEMPO REAL PARA BLOQUEO INMEDIATO ---
+  useEffect(() => {
+    if (!session?.user) return;
+
+    // Suscribirse a cambios en MI perfil
+    const channel = supabase
+      .channel('security_check')
+      .on(
+        'postgres_changes',
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'profiles', 
+          filter: `id=eq.${session.user.id}` 
+        },
+        async (payload) => {
+          const newProfile = payload.new;
+          
+          // Verificar bloqueo
+          if (newProfile.subscription_status === 'canceled') {
+            await handleForceLogout('Tu cuenta ha sido bloqueada por un administrador.');
+          }
+          
+          // Verificar fecha (si no es admin)
+          if (newProfile.role !== 'admin' && newProfile.subscription_end_date) {
+             const expiry = new Date(newProfile.subscription_end_date);
+             const today = new Date();
+             expiry.setHours(0,0,0,0);
+             today.setHours(0,0,0,0);
+             
+             if (expiry < today) {
+                await handleForceLogout('Tu suscripción ha vencido. Contacta al administrador.');
+             }
+          }
+          
+          // Actualizar rol si cambió en caliente
+          if (newProfile.role !== userRole) {
+             setUserRole(newProfile.role);
+             localStorage.setItem('psiconexo_role', newProfile.role);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [session, userRole]);
+
+
+  // --- FUNCIÓN DE VALIDACIÓN DE STATUS ---
+  const validateUserStatus = async (userId: string): Promise<boolean> => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('subscription_status, subscription_end_date, role')
+        .eq('id', userId)
+        .single();
+      
+      if (error || !profile) return true; // Si falla la red, permitimos entrar por defecto
+
+      // 1. Chequeo de Bloqueo Manual
+      if (profile.subscription_status === 'canceled') {
+        await handleForceLogout('Tu cuenta se encuentra bloqueada.');
+        return false;
+      }
+
+      // 2. Chequeo de Fecha de Vencimiento (Ignorar si es Admin)
+      if (profile.role !== 'admin' && profile.subscription_end_date) {
+        const expiry = new Date(profile.subscription_end_date);
+        const today = new Date();
+        expiry.setHours(0,0,0,0);
+        today.setHours(0,0,0,0);
+
+        if (expiry < today) {
+          await handleForceLogout('Tu periodo de suscripción ha finalizado.');
+          return false;
+        }
+      }
+
+      return true;
+    } catch (e) {
+      console.error("Error validando usuario", e);
+      return true;
+    }
+  };
+
+  const handleForceLogout = async (reason: string) => {
+    alert(`⚠️ ACCESO DENEGADO\n\n${reason}`);
+    await supabase.auth.signOut();
+    setSession(null);
+    window.location.href = '/'; 
+  };
+
   const fetchUserRole = async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      // CORREGIDO: Se eliminó 'error' que no se usaba
+      const { data } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', userId)
         .single();
       
       if (data) {
-        console.log("✅ Rol confirmado:", data.role);
         setUserRole(data.role);
-        // GUARDAMOS EN MEMORIA LOCAL
         localStorage.setItem('psiconexo_role', data.role);
       } else {
-        console.warn("⚠️ Perfil no encontrado o error:", error);
-        // Si falla, intentamos mantener el rol que ya tenía en memoria si existe
-        // Si no, fallback a psychologist
         if (!userRole) setUserRole('psychologist');
       }
     } catch (err) {
@@ -148,7 +239,7 @@ function App() {
         activeTab={activeTab} 
         onTabChange={setActiveTab} 
         onLogout={handleLogout} 
-        userRole={userRole} // <--- Pasamos el rol recuperado
+        userRole={userRole} 
       />
       
       <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-black">
