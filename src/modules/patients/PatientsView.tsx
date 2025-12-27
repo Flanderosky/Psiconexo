@@ -74,9 +74,19 @@ export const PatientsView = ({
   const fetchPatients = async () => {
     setLoading(true);
     try {
+      // 1. Obtener el usuario actual para filtrar
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+         setPatients([]);
+         return;
+      }
+
+      // 2. Filtrar por user_id
       const { data, error } = await supabase
         .from('patients')
         .select('*')
+        .eq('user_id', user.id) // <--- CORRECCIÓN: Solo sus pacientes
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -146,7 +156,16 @@ export const PatientsView = ({
 
     setSaving(true);
     try {
-      const patientData = { ...selectedPatient };
+      // 2. Obtener usuario para asignar propiedad
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No hay sesión activa");
+
+      // 3. Agregar user_id al objeto
+      const patientData = { 
+        ...selectedPatient,
+        user_id: user.id // <--- CORRECCIÓN: Asigna el paciente al usuario actual
+      };
+
       const { data, error } = await supabase
         .from('patients')
         .upsert(patientData)
@@ -224,10 +243,8 @@ export const PatientsView = ({
                 <div>
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-zinc-800 to-black border border-zinc-700 flex items-center justify-center text-lg font-bold text-zinc-400 group-hover:text-emerald-400 group-hover:border-emerald-500/50 transition-colors">
-                      {/* --- CORRECCIÓN AQUÍ: Evitamos leer [0] si el string está vacío --- */}
                       {(patient.first_name && patient.first_name.length > 0) ? patient.first_name[0] : ''}
                       {(patient.last_name && patient.last_name.length > 0) ? patient.last_name[0] : ''}
-                      {/* Fallback si no hay nombre */}
                       {(!patient.first_name && !patient.last_name) && <User size={20} />}
                     </div>
                     <button 

@@ -10,10 +10,9 @@ import {
   UserPlus, 
   CalendarDays, 
   ShieldCheck, 
-  Brain // <--- AGREGADO: Esto soluciona el error rojo
+  Brain 
 } from 'lucide-react';
 
-// Props para recibir la función de navegación desde App.tsx
 interface DashboardViewProps {
   onNavigate: (route: string) => void;
 }
@@ -21,16 +20,48 @@ interface DashboardViewProps {
 export const DashboardView = ({ onNavigate }: DashboardViewProps) => {
   const [stats, setStats] = useState({ totalPatients: 0, activeSessions: 0 });
   const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState('Usuario'); // Estado inicial neutro
 
   useEffect(() => {
-    async function fetchStats() {
-      const { count: patientsCount } = await supabase.from('patients').select('*', { count: 'exact', head: true });
-      const { count: sessionsCount } = await supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('status', 'in_progress');
+    async function fetchData() {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (user) {
+        // 1. Obtener nombre del perfil (SIN PREFIJOS)
+        const { data: profile } = await supabase
+           .from('profiles')
+           .select('first_name, last_name')
+           .eq('id', user.id)
+           .single();
+
+        if (profile) {
+           const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+           // CORRECCIÓN: Se asigna solo el nombre, sin "Dr." ni prefijos.
+           if (fullName) setUserName(fullName);
+        } else if (user.user_metadata?.full_name) {
+           // Fallback a metadata si existe
+           setUserName(user.user_metadata.full_name);
+        }
+
+        // 2. Obtener estadísticas FILTRADAS por usuario
+        // Esto asegura que las tarjetas cuenten solo lo que pertenece al usuario logueado
+        const { count: patientsCount } = await supabase
+           .from('patients')
+           .select('*', { count: 'exact', head: true })
+           .eq('user_id', user.id); 
+
+        const { count: sessionsCount } = await supabase
+           .from('sessions')
+           .select('*', { count: 'exact', head: true })
+           .eq('status', 'in_progress')
+           .eq('user_id', user.id); 
+        
+        setStats({ totalPatients: patientsCount || 0, activeSessions: sessionsCount || 0 });
+      }
       
-      setStats({ totalPatients: patientsCount || 0, activeSessions: sessionsCount || 0 });
       setLoading(false);
     }
-    fetchStats();
+    fetchData();
   }, []);
 
   // COMPONENTE: TARJETA DE ESTADÍSTICA
@@ -111,8 +142,9 @@ export const DashboardView = ({ onNavigate }: DashboardViewProps) => {
                <h2 className="text-emerald-500/70 text-[10px] uppercase tracking-[0.3em] mb-1 font-semibold flex items-center gap-2">
                  <Zap size={10} className="fill-current" /> Sistema En Línea
                </h2>
+               {/* NOMBRE DE USUARIO LIMPIO */}
                <h1 className="text-3xl md:text-4xl text-white font-light tracking-wide">
-                 Hola, <span className="font-normal text-transparent bg-clip-text bg-gradient-to-r from-white to-zinc-400">Dr. Usuario</span>
+                 Hola, <span className="font-normal text-transparent bg-clip-text bg-gradient-to-r from-white to-zinc-400">{userName}</span>
                </h1>
             </div>
             
@@ -146,7 +178,6 @@ export const DashboardView = ({ onNavigate }: DashboardViewProps) => {
 
                     <div className="text-center relative z-10 opacity-50 group-hover:opacity-100 transition-all duration-700 transform group-hover:scale-105">
                        <div className="w-20 h-20 bg-zinc-900/50 rounded-full flex items-center justify-center mx-auto mb-4 border border-zinc-800 group-hover:border-emerald-500/30 group-hover:shadow-[0_0_30px_rgba(16,185,129,0.1)] transition-all">
-                          {/* Aquí se usa el icono Brain, por eso daba error si no se importaba */}
                           <Brain className="text-zinc-600 group-hover:text-emerald-400 transition-colors" size={32} strokeWidth={1}/>
                        </div>
                        <p className="text-zinc-500 group-hover:text-zinc-300 text-xs font-light tracking-[0.2em] transition-colors">SIN ACTIVIDAD RECIENTE</p>

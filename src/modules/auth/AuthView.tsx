@@ -100,7 +100,7 @@ export const AuthView = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-black/60 border border-zinc-800/80 rounded-xl pl-12 pr-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-emerald-800/60 focus:bg-black/80 focus:shadow-[0_0_15px_rgba(16,185,129,0.05)] transition-all duration-500 placeholder-zinc-800 font-light tracking-wide"
-                  placeholder="usuario@nexo.clinic"
+                  placeholder="usuario@psiconexo.mx"
                 />
               </div>
             </div>
