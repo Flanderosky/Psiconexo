@@ -5,7 +5,7 @@ import {
   AlertTriangle, Lock, Edit, 
   X, Save, CalendarDays, Clock, 
   UserPlus, CheckCircle2, XCircle,
-  KeyRound, RefreshCw, Copy, Infinity // <--- Nuevo icono Infinity
+  KeyRound, RefreshCw, Copy, Infinity
 } from 'lucide-react';
 import { supabase, supabaseAdmin } from '../../lib/supabase';
 
@@ -14,9 +14,9 @@ interface UserProfile {
   id?: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'psychologist'; // <--- Importante para la lógica
+  role: 'admin' | 'psychologist';
   subscription_status: 'active' | 'past_due' | 'canceled';
-  subscription_end_date?: string; 
+  subscription_end_date?: string | null; 
   created_at?: string;
 }
 
@@ -91,7 +91,7 @@ export const AdminUsersView = () => {
     }
   };
 
-  const isExpired = (dateString?: string) => {
+  const isExpired = (dateString?: string | null) => {
     if (!dateString) return false;
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -100,7 +100,7 @@ export const AdminUsersView = () => {
     return expiry < today;
   };
 
-  const formatDate = (dateString?: string) => {
+  const formatDate = (dateString?: string | null) => {
     if (!dateString) return <span className="text-zinc-600 italic">--/--/--</span>;
     const [year, month, day] = dateString.split('-');
     return `${day}/${month}/${year}`;
@@ -115,6 +115,7 @@ export const AdminUsersView = () => {
     return matchesSearch && matchesFilter;
   });
 
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentUsers = filteredUsers.slice(startIndex, startIndex + itemsPerPage);
 
@@ -130,7 +131,7 @@ export const AdminUsersView = () => {
     setSelectedUser({
       full_name: '',
       email: '',
-      role: 'psychologist', // Por defecto
+      role: 'psychologist',
       subscription_status: 'active',
       subscription_end_date: new Date().toISOString().split('T')[0]
     });
@@ -153,6 +154,7 @@ export const AdminUsersView = () => {
     const current = currentStr ? new Date(currentStr) : new Date();
     const today = new Date();
     const baseDate = (!currentStr || current < today) ? today : current;
+    
     const nextMonth = new Date(baseDate);
     nextMonth.setDate(baseDate.getDate() + 30);
     
@@ -164,7 +166,7 @@ export const AdminUsersView = () => {
     showToast('Fecha actualizada (+30 días)', 'success');
   };
 
-  // --- GUARDADO ---
+  // --- GUARDADO DE USUARIO (CON CORRECCIÓN DE ERROR) ---
   const handleSaveUser = async () => {
     if (!selectedUser) return;
     if (!selectedUser.full_name || !selectedUser.email) {
@@ -175,59 +177,65 @@ export const AdminUsersView = () => {
 
     try {
       if (isCreating) {
-        // CREAR USUARIO
+        // --- 1. MODO CREAR ---
         if (!tempPassword) {
             showToast('Falta generar una contraseña', 'error');
             setSaving(false); 
             return;
         }
 
+        // A) Crear en Auth (Requiere SERVICE_ROLE en .env)
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email: selectedUser.email,
-          password: tempPassword, 
-          email_confirm: true, 
+          password: tempPassword,
+          email_confirm: true,
           user_metadata: { full_name: selectedUser.full_name }
         });
 
         if (authError) throw new Error('Error Auth: ' + authError.message);
         if (!authData.user) throw new Error('No se pudo generar el usuario');
 
+        // B) Crear Perfil (USAMOS UPSERT PARA EVITAR DUPLICADOS)
         const { error: insertError } = await supabase
           .from('profiles')
-          .insert([{
+          .upsert([{ 
              id: authData.user.id, 
              full_name: selectedUser.full_name,
              email: selectedUser.email,
-             role: selectedUser.role, // Aquí guardamos si es admin o no
+             role: selectedUser.role,
              subscription_status: selectedUser.subscription_status,
              subscription_end_date: selectedUser.role === 'admin' ? null : selectedUser.subscription_end_date
           }]);
 
         if (insertError) {
-           await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+           // Si falla el perfil, podrías optar por borrar el usuario Auth para no dejar basura
+           // await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
            throw insertError;
         }
+
         showToast('Usuario creado correctamente', 'success');
 
       } else {
-        // EDITAR USUARIO
+        // --- 2. MODO EDITAR ---
+        
+        // A) Actualizar contraseña si se generó una nueva
         if (tempPassword && selectedUser.id) {
             const { error: passError } = await supabaseAdmin.auth.admin.updateUserById(
                 selectedUser.id,
                 { password: tempPassword }
             );
-            if (passError) throw new Error('Pass Error: ' + passError.message);
+            if (passError) throw new Error('Error al cambiar contraseña: ' + passError.message);
             showToast('Contraseña actualizada', 'success');
         }
 
+        // B) Actualizar datos del perfil
         const { error: updateError } = await supabase
           .from('profiles')
           .update({
             full_name: selectedUser.full_name,
             email: selectedUser.email,
-            role: selectedUser.role, // Permitimos cambiar rol
+            role: selectedUser.role,
             subscription_status: selectedUser.subscription_status,
-            // Si es admin, limpiamos o ignoramos la fecha
             subscription_end_date: selectedUser.role === 'admin' ? null : selectedUser.subscription_end_date
           })
           .eq('id', selectedUser.id);
@@ -247,9 +255,8 @@ export const AdminUsersView = () => {
     }
   };
 
-  // --- RENDERIZADO DE BADGES INTELIGENTE ---
+  // --- RENDERIZADO DE BADGES ---
   const getStatusBadge = (user: UserProfile) => {
-    // 1. Si es ADMIN, siempre es especial
     if (user.role === 'admin') {
        return (
          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase tracking-wider w-fit">
@@ -257,8 +264,6 @@ export const AdminUsersView = () => {
          </div>
        );
     }
-
-    // 2. Si está CANCELADO/BLOQUEADO (Aplica a psicólogos)
     if (user.subscription_status === 'canceled') {
         return (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider w-fit">
@@ -266,8 +271,6 @@ export const AdminUsersView = () => {
           </div>
         );
     }
-    
-    // 3. Si está VENCIDO (Solo importa si NO es admin)
     if (isExpired(user.subscription_end_date)) {
         return (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-bold uppercase tracking-wider w-fit">
@@ -275,8 +278,6 @@ export const AdminUsersView = () => {
           </div>
         );
     }
-
-    // 4. ACTIVO NORMAL
     return (
       <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider w-fit">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Activo
@@ -358,7 +359,6 @@ export const AdminUsersView = () => {
                            <span className="text-zinc-500 text-xs flex items-center gap-1"><User size={12} /> Psicólogo</span>
                         }
                       </td>
-                      {/* LÓGICA DE COLUMNA RENOVACIÓN */}
                       <td className="px-6 py-4">
                         {user.role === 'admin' ? (
                             <span className="text-xs font-mono text-indigo-500/50 flex items-center gap-1">
@@ -379,6 +379,19 @@ export const AdminUsersView = () => {
                 )}
               </tbody>
             </table>
+          </div>
+          
+          {/* PAGINACIÓN */}
+          <div className="border-t border-zinc-800 bg-zinc-950/50 p-4 flex items-center justify-between">
+            <span className="text-xs text-zinc-500">
+              Página <span className="text-white">{currentPage}</span> de {totalPages || 1}
+            </span>
+            {totalPages > 1 && (
+                <div className="flex gap-2">
+                <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-2 rounded-lg border border-zinc-800 text-zinc-400 hover:bg-zinc-800 disabled:opacity-30 transition-colors"><Edit size={16} className="rotate-180" /></button>
+                <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="p-2 rounded-lg border border-zinc-800 text-zinc-400 hover:bg-zinc-800 disabled:opacity-30 transition-colors"><Edit size={16} /></button>
+                </div>
+            )}
           </div>
         </div>
       </div>
@@ -403,35 +416,22 @@ export const AdminUsersView = () => {
         
         {selectedUser && (
           <div className="flex-1 overflow-y-auto p-6 space-y-8">
-            {/* INFO BÁSICA Y SELECTOR DE ROL */}
             <div className="flex items-start gap-4 pb-6 border-b border-zinc-900">
               <div className="w-14 h-14 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 font-bold text-lg shrink-0">{selectedUser.full_name ? selectedUser.full_name.substring(0,2).toUpperCase() : <UserPlus />}</div>
               <div className="w-full space-y-3">
                 <input type="text" placeholder="Nombre Completo" value={selectedUser.full_name} onChange={(e) => setSelectedUser({...selectedUser, full_name: e.target.value})} className="w-full bg-transparent border-b border-zinc-800 focus:border-emerald-500 outline-none text-white font-medium placeholder:text-zinc-600 py-1 transition-colors" />
                 <input type="email" placeholder="correo@ejemplo.com" value={selectedUser.email} onChange={(e) => setSelectedUser({...selectedUser, email: e.target.value})} disabled={!isCreating} className={`w-full bg-transparent border-b border-zinc-800 focus:border-emerald-500 outline-none text-sm placeholder:text-zinc-700 py-1 transition-colors ${!isCreating ? 'text-zinc-500 cursor-not-allowed' : 'text-zinc-400'}`} />
                 
-                {/* SELECTOR DE ROL */}
                 <div className="pt-2">
                     <label className="text-[10px] uppercase text-zinc-600 font-bold tracking-wider mb-1 block">Tipo de Cuenta</label>
                     <div className="flex gap-2">
-                        <button 
-                            onClick={() => setSelectedUser({...selectedUser, role: 'psychologist'})}
-                            className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium border transition-all ${selectedUser.role === 'psychologist' ? 'bg-zinc-800 text-white border-zinc-600' : 'bg-transparent text-zinc-500 border-zinc-800 hover:border-zinc-700'}`}
-                        >
-                            Psicólogo
-                        </button>
-                        <button 
-                            onClick={() => setSelectedUser({...selectedUser, role: 'admin'})}
-                            className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium border transition-all ${selectedUser.role === 'admin' ? 'bg-indigo-900/30 text-indigo-300 border-indigo-500/50' : 'bg-transparent text-zinc-500 border-zinc-800 hover:border-zinc-700'}`}
-                        >
-                            Administrador
-                        </button>
+                        <button onClick={() => setSelectedUser({...selectedUser, role: 'psychologist'})} className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium border transition-all ${selectedUser.role === 'psychologist' ? 'bg-zinc-800 text-white border-zinc-600' : 'bg-transparent text-zinc-500 border-zinc-800 hover:border-zinc-700'}`}>Psicólogo</button>
+                        <button onClick={() => setSelectedUser({...selectedUser, role: 'admin'})} className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium border transition-all ${selectedUser.role === 'admin' ? 'bg-indigo-900/30 text-indigo-300 border-indigo-500/50' : 'bg-transparent text-zinc-500 border-zinc-800 hover:border-zinc-700'}`}>Administrador</button>
                     </div>
                 </div>
               </div>
             </div>
 
-            {/* SEGURIDAD */}
             <div className="space-y-4">
               <label className="text-xs uppercase tracking-wider font-bold text-zinc-500 flex items-center gap-2"><KeyRound size={12} /> {isCreating ? 'Credenciales de Acceso' : 'Restablecer Contraseña'}</label>
               {isCreating ? (
@@ -463,14 +463,10 @@ export const AdminUsersView = () => {
               )}
             </div>
 
-            {/* SECCIÓN DE VENCIMIENTO (CONDICIONAL) */}
             {selectedUser.role === 'admin' ? (
                 <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl flex items-start gap-3">
                     <Shield className="text-indigo-400 mt-0.5" size={18} />
-                    <div>
-                        <h4 className="text-sm font-bold text-indigo-300">Acceso Permanente</h4>
-                        <p className="text-xs text-indigo-200/60 mt-1">Los administradores tienen acceso ilimitado a la plataforma y no requieren renovación mensual.</p>
-                    </div>
+                    <div><h4 className="text-sm font-bold text-indigo-300">Acceso Permanente</h4><p className="text-xs text-indigo-200/60 mt-1">Los administradores tienen acceso ilimitado.</p></div>
                 </div>
             ) : (
                 <div className="space-y-4">
@@ -482,7 +478,6 @@ export const AdminUsersView = () => {
                 </div>
             )}
             
-            {/* BLOQUEO DE EMERGENCIA */}
             <div className={`p-4 rounded-xl flex items-center justify-between border transition-colors ${selectedUser.subscription_status === 'canceled' ? 'bg-red-950/10 border-red-900/30' : 'bg-zinc-900/30 border-zinc-800'}`}>
                <div className="flex items-center gap-3"><div className={`p-2 rounded-lg ${selectedUser.subscription_status === 'canceled' ? 'bg-red-500/10 text-red-500' : 'bg-zinc-800 text-zinc-500'}`}><Lock size={18} /></div><div><p className={`text-sm font-medium ${selectedUser.subscription_status === 'canceled' ? 'text-red-200' : 'text-zinc-300'}`}>Bloqueo de Emergencia</p><p className="text-xs opacity-60">Revocar acceso inmediatamente</p></div></div>
                <div onClick={() => setSelectedUser({...selectedUser, subscription_status: selectedUser.subscription_status === 'canceled' ? 'active' : 'canceled'})} className={`h-6 w-11 rounded-full border relative cursor-pointer transition-colors ${selectedUser.subscription_status === 'canceled' ? 'bg-red-900/50 border-red-500' : 'bg-zinc-900 border-zinc-700'}`}><div className={`absolute top-1 h-3.5 w-3.5 rounded-full transition-all duration-300 shadow-sm ${selectedUser.subscription_status === 'canceled' ? 'right-1 bg-red-500' : 'left-1 bg-zinc-500'}`}></div></div>
