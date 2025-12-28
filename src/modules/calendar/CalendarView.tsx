@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, 
   Clock, User, Activity, Loader2, Plus, X, ArrowRight,
-  CheckCircle2} from 'lucide-react';
+  CheckCircle2
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface CalendarViewProps {
@@ -34,7 +35,7 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
     patientId: '', 
     date: '', 
     time: '10:00', 
-    duration: '60', // Por defecto 60 min
+    duration: '60', 
     type: 'Consulta General' 
   });
 
@@ -43,7 +44,16 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
   
   useEffect(() => {
     const fetchPatients = async () => {
-      const { data } = await supabase.from('patients').select('id, full_name').order('full_name');
+      // Opcional: También podrías filtrar pacientes por usuario aquí si no tienes RLS activado en SELECT
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('patients')
+        .select('id, full_name')
+        .eq('user_id', user.id) // Aseguramos ver solo mis pacientes
+        .order('full_name');
+        
       if (data) setPatientsList(data);
     };
     fetchPatients();
@@ -61,7 +71,6 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
     filtered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     setDaySessions(filtered);
     
-    // Sincronizar form si el modal está cerrado
     if (!isModalOpen) {
         const year = selectedDate.getFullYear();
         const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
@@ -73,15 +82,31 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
 
   const fetchSessionsForMonth = async () => {
     setLoading(true);
-    const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
-    const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString();
-    const { data } = await supabase
-      .from('sessions')
-      .select('*, patients(full_name)')
-      .gte('created_at', start)
-      .lte('created_at', end);
-    if (data) setSessions(data);
-    setLoading(false);
+    try {
+      // 1. Obtener usuario actual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+         setSessions([]);
+         setLoading(false);
+         return;
+      }
+
+      const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+      const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString();
+      
+      const { data } = await supabase
+        .from('sessions')
+        .select('*, patients(full_name)')
+        .eq('user_id', user.id) // <--- CORRECCIÓN: Filtramos por el usuario logueado
+        .gte('created_at', start)
+        .lte('created_at', end);
+        
+      if (data) setSessions(data);
+    } catch (error) {
+      console.error("Error fetching sessions:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSaveSession = async (e: React.FormEvent) => {
@@ -90,15 +115,23 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
     
     setSaving(true);
     try {
+      // 2. Obtener usuario para guardar
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No hay sesión activa");
+
       const dateTimeString = `${formData.date}T${formData.time}:00`;
+      
       const { error } = await supabase.from('sessions').insert({
+          user_id: user.id, // <--- CORRECCIÓN: Asignamos la sesión al usuario actual
           patient_id: formData.patientId,
           created_at: new Date(dateTimeString).toISOString(),
-          duration: parseInt(formData.duration), // Guardamos la duración como número
+          duration: parseInt(formData.duration), 
           tags: [`${formData.duration} min`, formData.type], 
           summary: 'Sesión programada',
-          notes: `Sesión agendada: ${formData.type}` // Nota inicial opcional
+          notes: `Sesión agendada: ${formData.type}`,
+          status: 'scheduled' // <--- Marcamos explícitamente como agendada
         });
+        
       if (error) throw error;
       
       await fetchSessionsForMonth();
@@ -112,7 +145,7 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
     }
   };
 
-  // --- HELPERS CALENDARIO ---
+  //Helpers
   const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
   const prevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
@@ -120,7 +153,6 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
   const daysArray = [...Array(firstDayOfMonth).fill(null), ...Array(daysInMonth).keys()];
   const hasSession = (day: number) => sessions.some(s => new Date(s.created_at).getDate() === day);
 
-  // --- HELPERS MINI CALENDARIO (MODAL) ---
   const modalDaysInMonth = new Date(modalRefDate.getFullYear(), modalRefDate.getMonth() + 1, 0).getDate();
   const modalFirstDay = new Date(modalRefDate.getFullYear(), modalRefDate.getMonth(), 1).getDay();
   const modalPrevMonth = () => setModalRefDate(new Date(modalRefDate.getFullYear(), modalRefDate.getMonth() - 1, 1));
@@ -242,7 +274,7 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
          </div>
       </div>
 
-      {/* MODAL DE AGENDAR CON SELECTOR DE DURACIÓN */}
+      {/* MODAL DE AGENDAR */}
       {isModalOpen && (
         <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in zoom-in-95">
           <div className="bg-zinc-950 border border-zinc-800 w-full max-w-lg rounded-2xl shadow-2xl p-6 relative flex flex-col md:flex-row gap-6 overflow-hidden">
@@ -260,7 +292,6 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
                         </select>
                     </div>
                     
-                    {/* HORA Y DURACIÓN (Nueva fila) */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <label className="text-[10px] text-zinc-500 font-bold uppercase">Hora Inicio</label>
@@ -279,7 +310,6 @@ export const CalendarView = ({ onNavigateToPatient }: CalendarViewProps) => {
                         </div>
                     </div>
 
-                    {/* TIPO DE SESIÓN */}
                     <div className="space-y-1">
                         <label className="text-[10px] text-zinc-500 font-bold uppercase">Tipo de Sesión</label>
                         <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full bg-black border border-zinc-800 rounded-lg p-3 text-white text-sm focus:border-emerald-500 outline-none transition-colors">
