@@ -4,13 +4,12 @@ import {
   Zap, Moon, ShieldAlert, CheckSquare, 
   StopCircle, Brain, Pause, Play,
   MoreHorizontal, AlertTriangle, Activity, Repeat,
-  ArrowLeft, FileClock, Tag
+  ArrowLeft, FileClock, Tag, AlertOctagon // <--- Importamos AlertOctagon
 } from 'lucide-react';
 
 interface LiveSessionViewProps {
   patientName: string;
   lastSessionContext: string;
-  // Firma actualizada para aceptar timeline[]
   onFinish: (notes: string, duration: number, tags: string[], timeline: any[]) => void;
   onCancel: () => void;
   initialNotes?: string;
@@ -26,6 +25,9 @@ export const LiveSessionView = ({ patientName, lastSessionContext, onFinish, onC
   const [isPaused, setIsPaused] = useState(true); 
   const [hasStarted, setHasStarted] = useState(false);
   
+  // ESTADO PARA EL MODAL DE SALIDA
+  const [showExitModal, setShowExitModal] = useState(false);
+
   // Notas
   const [notes, setNotes] = useState(initialNotes);
   const [sessionTitle, setSessionTitle] = useState(''); 
@@ -40,7 +42,6 @@ export const LiveSessionView = ({ patientName, lastSessionContext, onFinish, onC
 
   const [activeFlash, setActiveFlash] = useState<string | null>(null);
 
-  // Lista de Etiquetas para Métricas
   const FOCUS_OPTIONS = [
     'Ansiedad', 'Depresión', 'Duelo', 'Pareja', 
     'Trauma', 'Autoestima', 'Estrés', 'Adicciones',
@@ -72,7 +73,6 @@ export const LiveSessionView = ({ patientName, lastSessionContext, onFinish, onC
   };
 
   const handleStart = () => {
-    // Agregamos Header a las notas
     let header = '';
     if (sessionTitle.trim()) header += `TEMA: ${sessionTitle.toUpperCase()}\n`;
     if (selectedFocusTags.length > 0) header += `ENFOQUE: ${selectedFocusTags.join(', ')}\n`;
@@ -85,33 +85,40 @@ export const LiveSessionView = ({ patientName, lastSessionContext, onFinish, onC
     setHasStarted(true);
   };
 
-  // Registrar Evento
   const handleRecordEvent = (id: keyof typeof counters, label: string) => {
-    // 1. Contador visual
     setCounters(prev => ({ ...prev, [id]: prev[id] + 1 }));
-    
-    // 2. Línea de tiempo (JSON)
     setTimeline(prev => [...prev, { label, timestamp: seconds }]);
-    
-    // 3. Animación
     setActiveFlash(id);
     setTimeout(() => setActiveFlash(null), 200);
   };
 
   const handleFinish = () => {
-    // Generar Resumen de Tags para métricas
     const counts: Record<string, number> = {};
     timeline.forEach(e => { counts[e.label] = (counts[e.label] || 0) + 1; });
     const metricTags = Object.entries(counts).map(([label, count]) => `${label} (${count})`);
     const finalTags = [...selectedFocusTags, ...metricTags];
     
-    // Enviamos timeline separado de las notas
-    onFinish(notes, seconds, finalTags, timeline);
+    const summaryLines = Object.entries(counters)
+      .filter(([_, val]) => val > 0)
+      .map(([key, val]) => {
+         const label = key.charAt(0).toUpperCase() + key.slice(1);
+         return `${label}: ${val}`;
+      });
+
+    let finalNotes = notes;
+    if (summaryLines.length > 0) {
+        finalNotes += `\n\n--- RESUMEN DE ACTIVIDAD ---\n${summaryLines.join(', ')}`;
+    }
+
+    onFinish(finalNotes, seconds, finalTags, timeline);
   };
 
+  // --- LÓGICA CORREGIDA DEL BOTÓN ATRÁS ---
   const handleBack = () => {
-    if (hasStarted && seconds > 10) {
-        if (window.confirm("La sesión está en curso. ¿Deseas salir sin guardar?")) onCancel();
+    // Cambiado de 10 a 1 segundo para que pruebes fácil
+    if (hasStarted && seconds > 1) { 
+        setIsPaused(true); 
+        setShowExitModal(true); // Mostrar nuestro Modal Personalizado
     } else {
         onCancel();
     }
@@ -154,7 +161,6 @@ export const LiveSessionView = ({ patientName, lastSessionContext, onFinish, onC
       {!hasStarted && (
         <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-6 md:p-10 top-20 overflow-y-auto">
             <div className="w-full max-w-6xl grid grid-cols-1 md:grid-cols-3 gap-8">
-                
                 {/* 1. Contexto Sesión Anterior */}
                 <div className="space-y-4 animate-in slide-in-from-left-10 duration-700 md:col-span-1">
                     <div className="flex items-center gap-2 text-zinc-500 uppercase tracking-widest text-xs font-bold">
@@ -240,6 +246,40 @@ export const LiveSessionView = ({ patientName, lastSessionContext, onFinish, onC
             </button>
          </div>
       </div>
+
+      {/* --- MODAL DE CONFIRMACIÓN DE SALIDA --- */}
+      {showExitModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+           <div className="absolute inset-0 bg-zinc-950/90 backdrop-blur-sm" onClick={() => setShowExitModal(false)}></div>
+           <div className="relative bg-zinc-900 border border-zinc-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in zoom-in-95">
+              <div className="flex flex-col items-center text-center space-y-4">
+                 <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mb-2">
+                    <AlertOctagon size={32} className="text-amber-500" />
+                 </div>
+                 <div>
+                    <h3 className="text-lg font-bold text-white">¿Abandonar Sesión?</h3>
+                    <p className="text-zinc-400 text-sm mt-2">
+                       La sesión está en curso. Si sales ahora, el tiempo y los eventos no registrados se perderán.
+                    </p>
+                 </div>
+                 <div className="grid grid-cols-2 gap-3 w-full pt-2">
+                    <button 
+                       onClick={() => setShowExitModal(false)} 
+                       className="px-4 py-2.5 rounded-xl text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
+                    >
+                       Cancelar
+                    </button>
+                    <button 
+                       onClick={onCancel} 
+                       className="px-4 py-2.5 rounded-xl text-sm font-bold bg-red-600 text-white hover:bg-red-500 transition-colors shadow-lg shadow-red-900/20"
+                    >
+                       Salir sin Guardar
+                    </button>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };

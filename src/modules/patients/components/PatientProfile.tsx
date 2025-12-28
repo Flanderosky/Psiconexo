@@ -3,15 +3,16 @@ import { useEffect, useState } from 'react';
 import { 
   User, Phone, Mail, Calendar, 
   Brain, Activity, ArrowLeft, Play, 
-  FileText, Dna, Hash, // <--- Hash está aquí correctamente
-  Trash2, Archive, CheckCircle2, Loader2, ExternalLink
+  FileText, Dna, Hash, 
+  Trash2, Archive, CheckCircle2, Loader2, ExternalLink,
+  Clock, Edit3, Save, X // <--- Iconos para edición
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 
 interface PatientProfileProps {
   patient: any;
   onBack: () => void;
-  onStartSession: () => void;
+  onStartSession: (sessionData?: any) => void;
   onOpenSession: (sessionId: string) => void; 
 }
 
@@ -21,7 +22,11 @@ export const PatientProfile = ({ patient, onBack, onStartSession, onOpenSession 
   const [actionLoading, setActionLoading] = useState(false);
   const [patientStatus, setPatientStatus] = useState(patient.status || 'active');
 
-  // 1. CARGAR HISTORIAL
+  // --- ESTADO PARA EDITAR EL CONTEXTO ---
+  const [isEditingContext, setIsEditingContext] = useState(false);
+  const [contextText, setContextText] = useState(patient.clinical_summary || '');
+  const [savingContext, setSavingContext] = useState(false);
+
   useEffect(() => {
     const fetchHistory = async () => {
       const { data } = await supabase
@@ -36,7 +41,24 @@ export const PatientProfile = ({ patient, onBack, onStartSession, onOpenSession 
     fetchHistory();
   }, [patient.id]);
 
-  // --- ACCIONES ADMINISTRATIVAS ---
+  // --- GUARDAR CONTEXTO EDITADO ---
+  const handleSaveContext = async () => {
+      setSavingContext(true);
+      const { error } = await supabase
+        .from('patients')
+        .update({ clinical_summary: contextText })
+        .eq('id', patient.id);
+      
+      if (!error) {
+          // Actualizamos el objeto local visualmente (truco rápido para no recargar todo)
+          patient.clinical_summary = contextText;
+          setIsEditingContext(false);
+      } else {
+          alert('Error al guardar el contexto.');
+      }
+      setSavingContext(false);
+  };
+
   const handleToggleStatus = async () => {
     setActionLoading(true);
     const newStatus = patientStatus === 'active' ? 'archived' : 'active';
@@ -52,7 +74,6 @@ export const PatientProfile = ({ patient, onBack, onStartSession, onOpenSession 
     if (!error) onBack(); else { alert('Error al eliminar'); setActionLoading(false); }
   };
 
-  // --- HELPERS ---
   const getAge = (dateString: string) => {
     if (!dateString) return '--';
     const today = new Date();
@@ -68,6 +89,11 @@ export const PatientProfile = ({ patient, onBack, onStartSession, onOpenSession 
     return `EXP-${num.toString().padStart(3, '0')}`;
   };
 
+  const isScheduled = (dateString: string, status?: string) => {
+      if (status === 'scheduled') return true;
+      return new Date(dateString) > new Date();
+  };
+
   return (
     <div className="flex-1 h-full overflow-y-auto bg-black p-6 md:p-10 animate-in slide-in-from-right-8 duration-500 relative">
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-emerald-900/5 rounded-full blur-[120px] pointer-events-none"></div>
@@ -80,7 +106,7 @@ export const PatientProfile = ({ patient, onBack, onStartSession, onOpenSession 
 
       <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* COLUMNA IZQUIERDA */}
+        {/* COLUMNA IZQUIERDA (Info Paciente) */}
         <div className="lg:col-span-1 space-y-6">
            <div className={`bg-zinc-950/50 border ${patientStatus === 'active' ? 'border-zinc-900' : 'border-amber-900/30'} p-6 rounded-2xl text-center relative overflow-hidden group transition-colors`}>
               <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 to-transparent opacity-50"></div>
@@ -126,7 +152,7 @@ export const PatientProfile = ({ patient, onBack, onStartSession, onOpenSession 
         <div className="lg:col-span-2 space-y-6">
            
            {patientStatus === 'active' ? (
-               <button onClick={onStartSession} className="w-full bg-gradient-to-r from-emerald-950/30 to-zinc-900 border border-emerald-900/50 p-6 rounded-2xl group hover:border-emerald-500/50 hover:bg-emerald-950/40 transition-all duration-300 relative overflow-hidden flex items-center justify-between">
+               <button onClick={() => onStartSession()} className="w-full bg-gradient-to-r from-emerald-950/30 to-zinc-900 border border-emerald-900/50 p-6 rounded-2xl group hover:border-emerald-500/50 hover:bg-emerald-950/40 transition-all duration-300 relative overflow-hidden flex items-center justify-between">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
                   <div className="flex items-center gap-5 relative z-10">
                      <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform shadow-[0_0_20px_rgba(16,185,129,0.2)]">
@@ -143,15 +169,45 @@ export const PatientProfile = ({ patient, onBack, onStartSession, onOpenSession 
                <div className="w-full bg-zinc-900/50 border border-zinc-800 p-4 rounded-xl flex items-center justify-center gap-3 text-amber-500/50"><Archive size={18} /><span className="text-xs uppercase tracking-widest">Paciente Archivado</span></div>
            )}
 
-           <div className="bg-zinc-900/20 border border-zinc-800 p-6 rounded-2xl">
-              <div className="flex items-center gap-2 mb-4">
-                 <Brain className="text-emerald-500" size={18} strokeWidth={1.5}/>
-                 <h3 className="text-sm text-white font-medium tracking-wide">Contexto del Caso</h3>
+           {/* --- SECCIÓN DE CONTEXTO CLÍNICO EDITABLE --- */}
+           <div className="bg-zinc-900/20 border border-zinc-800 p-6 rounded-2xl group/context relative">
+              <div className="flex items-center justify-between mb-4">
+                 <div className="flex items-center gap-2">
+                    <Brain className="text-emerald-500" size={18} strokeWidth={1.5}/>
+                    <h3 className="text-sm text-white font-medium tracking-wide">Contexto del Caso</h3>
+                 </div>
+                 {/* Botón de Editar */}
+                 {!isEditingContext && (
+                     <button onClick={() => setIsEditingContext(true)} className="text-zinc-600 hover:text-emerald-500 transition-colors opacity-0 group-hover/context:opacity-100">
+                        <Edit3 size={16} />
+                     </button>
+                 )}
               </div>
-              <p className="text-zinc-300 text-sm font-light leading-relaxed whitespace-pre-wrap pl-4 border-l-2 border-zinc-800">{patient.clinical_summary || "No hay información registrada en la ficha inicial."}</p>
+
+              {isEditingContext ? (
+                  <div className="space-y-3 animate-in fade-in">
+                      <textarea 
+                        autoFocus
+                        value={contextText}
+                        onChange={(e) => setContextText(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-200 focus:border-emerald-500/50 outline-none resize-none h-[120px]"
+                        placeholder="Escribe aquí el resumen clínico..."
+                      />
+                      <div className="flex justify-end gap-2">
+                          <button onClick={() => setIsEditingContext(false)} className="p-2 text-zinc-500 hover:text-white"><X size={18}/></button>
+                          <button onClick={handleSaveContext} disabled={savingContext} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-2">
+                              {savingContext ? 'Guardando...' : <><Save size={14}/> Guardar</>}
+                          </button>
+                      </div>
+                  </div>
+              ) : (
+                  <p className="text-zinc-300 text-sm font-light leading-relaxed whitespace-pre-wrap pl-4 border-l-2 border-zinc-800">
+                      {contextText || <span className="text-zinc-600 italic">No hay información registrada en la ficha inicial. Haz clic en editar para agregar.</span>}
+                  </p>
+              )}
            </div>
 
-           {/* LISTA DE SESIONES INTERACTIVA */}
+           {/* LISTA DE SESIONES */}
            <div>
               <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4 flex items-center gap-2"><FileText size={14} /> Historial de Sesiones ({sessions.length})</h3>
 
@@ -161,41 +217,96 @@ export const PatientProfile = ({ patient, onBack, onStartSession, onOpenSession 
                 <div className="p-8 border border-dashed border-zinc-800 rounded-2xl text-center text-zinc-600"><p className="text-xs">No hay sesiones registradas aún.</p></div>
               ) : (
                 <div className="space-y-4">
-                   {sessions.map((session) => (
-                      <div 
-                        key={session.id} 
-                        // --- AQUÍ CONECTAMOS EL CLIC ---
-                        onClick={() => onOpenSession(session.id)}
-                        className="group bg-black border border-zinc-900 rounded-xl overflow-hidden hover:border-emerald-500/30 transition-all cursor-pointer hover:shadow-lg hover:shadow-emerald-900/5 relative"
-                      >
-                         {/* Indicador de "Click para abrir" */}
-                         <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-emerald-500">
-                            <ExternalLink size={16} />
-                         </div>
+                   {sessions.map((session) => {
+                      const scheduled = isScheduled(session.created_at, session.status);
+                      
+                      return (
+                        <div 
+                            key={session.id} 
+                            onClick={() => !scheduled && onOpenSession(session.id)}
+                            className={`group bg-black border rounded-xl overflow-hidden transition-all relative 
+                                ${scheduled 
+                                    ? 'border-blue-900/50 hover:border-blue-500/50 hover:shadow-blue-900/10 cursor-default' 
+                                    : 'border-zinc-900 hover:border-emerald-500/30 hover:shadow-emerald-900/5 cursor-pointer'}`
+                            }
+                        >
+                            {!scheduled && (
+                                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-emerald-500">
+                                    <ExternalLink size={16} />
+                                </div>
+                            )}
 
-                         <div className="bg-zinc-950/50 px-4 py-3 flex items-center justify-between border-b border-zinc-900 group-hover:bg-zinc-900/50 transition-colors">
-                             <div className="flex items-center gap-3">
-                                 <div className="px-2 py-1 bg-zinc-900 rounded text-[10px] text-zinc-400 font-mono border border-zinc-800">
-                                     {new Date(session.created_at).toLocaleDateString()}
-                                 </div>
-                                 <h4 className="text-xs font-bold text-emerald-500 uppercase tracking-wider">
-                                     {session.tags && session.tags[0] ? session.tags[0] : 'Sesión General'}
-                                 </h4>
-                             </div>
-                             <span className="text-[10px] text-zinc-600 uppercase font-mono mr-6">
-                                 {session.duration ? Math.round(session.duration/60) + ' MIN' : ''}
-                             </span>
-                         </div>
-                         <div className="p-4">
-                             <p className="text-sm text-zinc-300 font-light leading-relaxed whitespace-pre-wrap line-clamp-3 group-hover:line-clamp-none transition-all">
-                                 {session.notes || session.content || "Sin notas registradas."}
-                             </p>
-                             <div className="mt-2 text-[9px] text-zinc-600 uppercase tracking-widest font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                                Clic para ver detalles completos
-                             </div>
-                         </div>
-                      </div>
-                   ))}
+                            <div className={`px-4 py-3 flex items-center justify-between border-b transition-colors
+                                ${scheduled 
+                                    ? 'bg-blue-950/10 border-blue-900/30' 
+                                    : 'bg-zinc-950/50 border-zinc-900 group-hover:bg-zinc-900/50'}`
+                            }>
+                                <div className="flex items-center gap-3">
+                                    <div className={`px-2 py-1 rounded text-[10px] font-mono border 
+                                        ${scheduled 
+                                            ? 'bg-blue-900/20 text-blue-300 border-blue-800' 
+                                            : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`
+                                    }>
+                                        {new Date(session.created_at).toLocaleDateString()}
+                                    </div>
+                                    
+                                    {scheduled ? (
+                                        <h4 className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                                            <Clock size={12} /> AGENDADA
+                                        </h4>
+                                    ) : (
+                                        <h4 className="text-xs font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-1.5">
+                                            <CheckCircle2 size={12} /> REALIZADA
+                                        </h4>
+                                    )}
+                                </div>
+                                
+                                <span className={`text-[10px] uppercase font-mono mr-6 ${scheduled ? 'text-blue-300' : 'text-zinc-600'}`}>
+                                    {scheduled 
+                                        ? new Date(session.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                                        : (session.duration ? Math.round(session.duration/60) + ' MIN' : '')
+                                    }
+                                </span>
+                            </div>
+                            
+                            <div className="p-4 flex justify-between items-center">
+                                <div className="flex-1 pr-4">
+                                    {session.tags && session.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {session.tags.map((tag: string, i: number) => (
+                                                <span key={i} className={`text-[9px] px-1.5 py-0.5 rounded border 
+                                                    ${scheduled 
+                                                        ? 'bg-blue-950/30 border-blue-900/50 text-blue-300' 
+                                                        : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`
+                                                }>
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <p className={`text-sm font-light leading-relaxed whitespace-pre-wrap line-clamp-2 
+                                        ${scheduled ? 'text-blue-200/60 italic' : 'text-zinc-300'}`
+                                    }>
+                                        {session.notes || session.content || (scheduled ? "Sin notas previas." : "Sin notas registradas.")}
+                                    </p>
+                                </div>
+
+                                {scheduled && (
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onStartSession(session);
+                                        }}
+                                        className="shrink-0 flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg shadow-blue-900/20 hover:shadow-blue-900/40 transition-all transform hover:scale-105"
+                                    >
+                                        <Play size={14} fill="currentColor" /> Iniciar Ahora
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                      );
+                   })}
                 </div>
               )}
            </div>
