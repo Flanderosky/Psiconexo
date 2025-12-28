@@ -20,7 +20,15 @@ interface DashboardViewProps {
 export const DashboardView = ({ onNavigate }: DashboardViewProps) => {
   const [stats, setStats] = useState({ totalPatients: 0, activeSessions: 0 });
   const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState('Usuario'); // Estado inicial neutro
+  const [userName, setUserName] = useState('Usuario'); 
+
+  // --- CALCULAR SALUDO SEGÚN HORA ---
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Buenos días';
+    if (hour < 19) return 'Buenas tardes';
+    return 'Buenas noches';
+  };
 
   useEffect(() => {
     async function fetchData() {
@@ -36,15 +44,13 @@ export const DashboardView = ({ onNavigate }: DashboardViewProps) => {
 
         if (profile) {
            const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
-           // CORRECCIÓN: Se asigna solo el nombre, sin "Dr." ni prefijos.
+           // Si el nombre existe, lo usamos. Si no, dejamos el default.
            if (fullName) setUserName(fullName);
         } else if (user.user_metadata?.full_name) {
-           // Fallback a metadata si existe
            setUserName(user.user_metadata.full_name);
         }
 
         // 2. Obtener estadísticas FILTRADAS por usuario
-        // Esto asegura que las tarjetas cuenten solo lo que pertenece al usuario logueado
         const { count: patientsCount } = await supabase
            .from('patients')
            .select('*', { count: 'exact', head: true })
@@ -142,9 +148,9 @@ export const DashboardView = ({ onNavigate }: DashboardViewProps) => {
                <h2 className="text-emerald-500/70 text-[10px] uppercase tracking-[0.3em] mb-1 font-semibold flex items-center gap-2">
                  <Zap size={10} className="fill-current" /> Sistema En Línea
                </h2>
-               {/* NOMBRE DE USUARIO LIMPIO */}
+               {/* SALUDO DINÁMICO */}
                <h1 className="text-3xl md:text-4xl text-white font-light tracking-wide">
-                 Hola, <span className="font-normal text-transparent bg-clip-text bg-gradient-to-r from-white to-zinc-400">{userName}</span>
+                 {getGreeting()}, <span className="font-normal text-transparent bg-clip-text bg-gradient-to-r from-white to-zinc-400">{userName}</span>
                </h1>
             </div>
             
