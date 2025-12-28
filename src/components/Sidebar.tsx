@@ -6,14 +6,15 @@ import {
   LogOut, 
   Shield, 
   Brain,
-  Calendar
+  Calendar,
+  Activity // <--- 1. IMPORTAMOS EL ICONO
 } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
   onLogout: () => void;
-  userRole: string | null; // <--- NUEVA PROP
+  userRole: string | null;
 }
 
 export const Sidebar = ({ activeTab, onTabChange, onLogout, userRole }: SidebarProps) => {
@@ -75,7 +76,9 @@ export const Sidebar = ({ activeTab, onTabChange, onLogout, userRole }: SidebarP
           <MenuButton id="calendar" icon={Calendar} label="Agenda" />
           <MenuButton id="patients" icon={Users} label="Pacientes" />
           
-          {/* RENDERIZADO CONDICIONAL DEL BOTÓN ADMIN */}
+          {/* 2. AGREGAMOS EL BOTÓN DE SESIONES */}
+          <MenuButton id="sessions" icon={Activity} label="Sesiones" />
+          
           {userRole === 'admin' && (
             <MenuButton id="admin" icon={Shield} label="Admin" />
           )}
